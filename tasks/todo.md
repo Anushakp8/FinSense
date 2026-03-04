@@ -1,19 +1,17 @@
-# FinSense â€” Task Tracking
+# FinSense - Task Tracking
 
-## Phase 1: Project Scaffolding and Infrastructure
+## Phase 1: Project Scaffolding and Infrastructure - COMPLETE
 
-**Goal**: Set up the full project structure, Docker environment, and database schema.
+## Phase 2: Data Ingestion Pipeline
+
+**Goal**: Fetch historical stock data and economic indicators, store in PostgreSQL, simulate real-time streaming via Kafka.
 
 ### Tasks
-
-- [x] 1.1 Create the full folder structure
-- [x] 1.2 Create docker-compose.yml with all services
-- [x] 1.3 Create .env.example
-- [x] 1.4 Create backend/pyproject.toml
-- [x] 1.5 Initialize Alembic for database migrations
-- [x] 1.6 Write SQLAlchemy ORM models for all four tables
-- [x] 1.7 Generate initial Alembic migration with TimescaleDB hypertable
-- [x] 1.8 Create tasks/lessons.md
-- [x] 1.9 Create .gitignore
-- [x] 1.10 Create initial README.md
-- [x] 1.11 ER diagram reviewed and approved
+- [x] 2.1 Write src/ingestion/stock_fetcher.py
+- [x] 2.2 Write src/ingestion/economic_fetcher.py + ORM model + migration
+- [x] 2.3 Write src/ingestion/kafka_producer.py
+- [x] 2.4 Write src/ingestion/kafka_consumer.py
+- [x] 2.5 Write unit tests in tests/test_ingestion/
+- [ ] 2.6 Run all tests and verify they pass
+- [ ] 2.7 Run stock ingestion to populate raw_prices
+- [ ] 2.8 Verify data in PostgreSQL
