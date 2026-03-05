@@ -135,7 +135,12 @@ def predict(engine: Engine, ticker: str, use_cache: bool = True) -> dict[str, ob
         msg = "No active model available. Train and promote a model first."
         raise ValueError(msg)
 
-    model, metadata = model_result
+    model_data, metadata = model_result
+    # Handle both old (raw model) and new (dict with model+scaler) formats
+    if isinstance(model_data, dict):
+        model = model_data["model"]
+    else:
+        model = model_data
 
     # Get latest features
     features = _get_latest_features(engine, ticker)
