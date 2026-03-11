@@ -9,6 +9,7 @@ from collections.abc import Generator
 from functools import lru_cache
 
 import redis
+from fastapi import Header, HTTPException, status
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -85,3 +86,22 @@ def reload_model() -> None:
     """Clear the model cache to force a reload on next request."""
     get_model_and_metadata.cache_clear()
     logger.info("Model cache cleared")
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Optionally enforce API key authentication for sensitive endpoints."""
+    if not settings.api_require_key:
+        return
+
+    if not settings.api_key:
+        logger.error("API key protection enabled but API_KEY is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API authentication is misconfigured",
+        )
+
+    if x_api_key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )

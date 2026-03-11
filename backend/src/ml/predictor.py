@@ -45,23 +45,50 @@ def _get_latest_features(engine: Engine, ticker: str) -> dict[str, float] | None
     """
     query = text("""
         WITH recent_prices AS (
-            SELECT timestamp, close,
-                   LAG(close, 1) OVER (ORDER BY timestamp) as close_1d,
-                   LAG(close, 3) OVER (ORDER BY timestamp) as close_3d,
-                   LAG(close, 5) OVER (ORDER BY timestamp) as close_5d
+            SELECT timestamp, close
             FROM raw_prices
             WHERE ticker = :ticker
             ORDER BY timestamp DESC
-            LIMIT 25
+            LIMIT 30
+        ),
+        ordered_prices AS (
+            SELECT timestamp, close
+            FROM recent_prices
+            ORDER BY timestamp ASC
+        ),
+        prices_with_lags AS (
+            SELECT
+                timestamp,
+                close,
+                LAG(close, 1) OVER (ORDER BY timestamp) AS close_1d,
+                LAG(close, 3) OVER (ORDER BY timestamp) AS close_3d,
+                LAG(close, 5) OVER (ORDER BY timestamp) AS close_5d,
+                LN(close / NULLIF(LAG(close, 1) OVER (ORDER BY timestamp), 0)) AS log_return_1d
+            FROM ordered_prices
+        ),
+        prices_with_volatility AS (
+            SELECT
+                timestamp,
+                close,
+                close_1d,
+                close_3d,
+                close_5d,
+                STDDEV_SAMP(log_return_1d) OVER (
+                    ORDER BY timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW
+                ) * SQRT(252) AS volatility_20d
+            FROM prices_with_lags
         ),
         latest AS (
-            SELECT * FROM recent_prices ORDER BY timestamp DESC LIMIT 1
+            SELECT * FROM prices_with_volatility
+            ORDER BY timestamp DESC
+            LIMIT 1
         )
         SELECT
             ti.rsi_14, ti.macd, ti.macd_signal,
             ti.bollinger_upper, ti.bollinger_lower,
             ti.sma_50, ti.sma_200,
             l.close, l.close_1d, l.close_3d, l.close_5d,
+            l.volatility_20d,
             l.timestamp
         FROM latest l
         JOIN technical_indicators ti
@@ -95,7 +122,8 @@ def _get_latest_features(engine: Engine, ticker: str) -> dict[str, float] | None
     features["return_1d"] = (close / close_1d - 1) if close_1d else 0.0
     features["return_3d"] = (close / close_3d - 1) if close_3d else 0.0
     features["return_5d"] = (close / close_5d - 1) if close_5d else 0.0
-    features["volatility_20d"] = 0.2  # Approximate; full calculation needs 20 rows
+    volatility_20d = float(row[11]) if row[11] is not None else 0.0
+    features["volatility_20d"] = volatility_20d
 
     return features
 
@@ -137,8 +165,12 @@ def predict(engine: Engine, ticker: str, use_cache: bool = True) -> dict[str, ob
 
     model_data, metadata = model_result
     # Handle both old (raw model) and new (dict with model+scaler) formats
+    scaler = None
+    feature_names = PREDICTION_FEATURES
     if isinstance(model_data, dict):
         model = model_data["model"]
+        scaler = model_data.get("scaler")
+        feature_names = model_data.get("feature_columns", PREDICTION_FEATURES)
     else:
         model = model_data
 
@@ -149,7 +181,9 @@ def predict(engine: Engine, ticker: str, use_cache: bool = True) -> dict[str, ob
         raise ValueError(msg)
 
     # Build feature vector in correct order
-    feature_vector = np.array([[features[col] for col in PREDICTION_FEATURES]])
+    feature_vector = np.array([[features[col] for col in feature_names]], dtype=np.float64)
+    if scaler is not None:
+        feature_vector = scaler.transform(feature_vector)
 
     # Predict
     prediction = model.predict(feature_vector)[0]

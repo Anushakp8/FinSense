@@ -1,0 +1,48 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 2h
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: critical-slack
+    - matchers:
+        - severity="warning"
+      receiver: warning-slack
+
+receivers:
+  - name: default
+    email_configs:
+      - to: ops@example.com
+        from: alerts@example.com
+        smarthost: smtp.example.com:587
+        auth_username: alerts@example.com
+        auth_password: "replace-with-smtp-password"
+        require_tls: true
+        headers:
+          Subject: "[FinSense] {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}"
+
+  - name: critical-slack
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/REPLACE/CRITICAL/WEBHOOK
+        channel: "#finsense-critical"
+        title: "[CRITICAL] {{ .CommonLabels.alertname }}"
+        text: >-
+          Service: {{ .CommonLabels.service }}
+          Summary: {{ .CommonAnnotations.summary }}
+          Description: {{ .CommonAnnotations.description }}
+
+  - name: warning-slack
+    slack_configs:
+      - api_url: https://hooks.slack.com/services/REPLACE/WARNING/WEBHOOK
+        channel: "#finsense-warnings"
+        title: "[WARNING] {{ .CommonLabels.alertname }}"
+        text: >-
+          Service: {{ .CommonLabels.service }}
+          Summary: {{ .CommonAnnotations.summary }}
+          Description: {{ .CommonAnnotations.description }}

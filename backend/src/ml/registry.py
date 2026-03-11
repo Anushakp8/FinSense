@@ -132,18 +132,22 @@ def promote_model(engine: Engine, version: str) -> bool:
         True if promotion succeeded, False if version not found.
     """
     with engine.begin() as conn:
-        # Deactivate all models
+        exists_result = conn.execute(
+            text("SELECT 1 FROM model_registry WHERE version = :version LIMIT 1"),
+            {"version": version},
+        )
+        if exists_result.scalar() is None:
+            logger.error("Model version %s not found", version)
+            return False
+
+        # Deactivate all models only after confirming target version exists.
         conn.execute(text("UPDATE model_registry SET is_active = FALSE"))
 
         # Activate the specified version
-        result = conn.execute(
+        conn.execute(
             text("UPDATE model_registry SET is_active = TRUE WHERE version = :version"),
             {"version": version},
         )
-
-        if result.rowcount == 0:
-            logger.error("Model version %s not found", version)
-            return False
 
     logger.info("Promoted model version %s to active", version)
     return True

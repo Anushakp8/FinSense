@@ -7,7 +7,13 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 
 from src.database import Base
-from src.models import ModelRegistry, Prediction, RawPrice, TechnicalIndicator  # noqa: F401
+from src.models import (  # noqa: F401
+    EconomicIndicator,
+    ModelRegistry,
+    Prediction,
+    RawPrice,
+    TechnicalIndicator,
+)
 
 config = context.config
 

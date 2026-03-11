@@ -1,9 +1,9 @@
 """FinSense Daily Pipeline DAG.
 
-Orchestrates the full data pipeline: ingest â†’ validate â†’ compute features.
-Model training and serving tasks are placeholder stubs until Phase 5.
+Orchestrates the full data pipeline: ingest -> validate -> compute features ->
+train models -> promote a serving model.
 
-Schedule: 6 PM EST on weekdays (after market close).
+Schedule: 6 PM America/New_York on weekdays (after market close).
 """
 
 import logging
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+import pendulum
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,12 @@ DATABASE_URL_SYNC = os.environ.get(
     "FINSENSE_DB_URL",
     "postgresql+psycopg2://finsense:finsense_secret@localhost:5432/finsense",
 )
+MODEL_ARTIFACTS_DIR = os.environ.get("FINSENSE_MODEL_DIR", "/opt/airflow/models")
+TRAIN_TICKERS = [
+    t.strip().upper()
+    for t in os.environ.get("FINSENSE_TRAIN_TICKERS", "AAPL,MSFT,GOOGL").split(",")
+    if t.strip()
+]
 
 
 def _get_engine():
@@ -91,21 +98,104 @@ def task_compute_features(**kwargs):
 
 
 def task_train_model(**kwargs):
-    """Task 4: Trigger model retraining.
+    """Task 4: Retrain models and register candidate versions.
 
-    Placeholder â€” will be implemented in Phase 5.
+    Trains per configured ticker and registers successful artifacts in
+    model_registry as inactive candidates.
     """
-    logger.info("Model training placeholder â€” will be implemented in Phase 5")
-    return {"status": "placeholder", "message": "Awaiting Phase 5 implementation"}
+    import sys
+
+    sys.path.insert(0, "/opt/airflow/src")
+
+    from src.ml.registry import register_model
+    from src.ml.trainer import run_training_pipeline
+
+    engine = _get_engine()
+    candidates: list[dict[str, object]] = []
+    failures: list[dict[str, object]] = []
+
+    logger.info("Training models for tickers: %s", TRAIN_TICKERS)
+    for ticker in TRAIN_TICKERS:
+        result = run_training_pipeline(
+            engine,
+            ticker=ticker,
+            model_dir=MODEL_ARTIFACTS_DIR,
+            use_optuna=False,
+            run_eda_report=False,
+        )
+        if result.get("status") != "success":
+            failures.append({"ticker": ticker, "status": result.get("status")})
+            logger.warning("Training skipped for %s: %s", ticker, result.get("status"))
+            continue
+
+        metrics = result["metrics"]
+        model_id = register_model(
+            engine,
+            model_name=result["best_model_name"],
+            version=result["version"],
+            metrics=metrics,
+            model_path=result["model_path"],
+        )
+        candidates.append(
+            {
+                "ticker": ticker,
+                "model_id": model_id,
+                "version": result["version"],
+                "model_name": result["best_model_name"],
+                "f1": metrics["f1"],
+            }
+        )
+
+    summary = {
+        "status": "success" if candidates else "no_candidates",
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "failures": failures,
+    }
+    logger.info("Training summary: %s", summary)
+    return summary
 
 
 def task_serve_model(**kwargs):
-    """Task 5: Register and activate the new model.
+    """Task 5: Promote the best candidate model.
 
-    Placeholder â€” will be implemented in Phase 5.
+    Picks the highest-F1 candidate from the training task and promotes it only
+    if it beats the current active model by the configured threshold.
     """
-    logger.info("Model serving placeholder â€” will be implemented in Phase 5")
-    return {"status": "placeholder", "message": "Awaiting Phase 5 implementation"}
+    import sys
+
+    sys.path.insert(0, "/opt/airflow/src")
+
+    from src.ml.registry import auto_promote_if_better
+
+    ti = kwargs["ti"]
+    training_summary = ti.xcom_pull(task_ids="train_model") or {}
+    candidates = training_summary.get("candidates", [])
+
+    if not candidates:
+        logger.warning("No candidate models available for promotion")
+        return {
+            "status": "skipped",
+            "reason": "no_candidates",
+            "message": "No successful training runs produced candidate models",
+        }
+
+    best_candidate = max(candidates, key=lambda c: float(c["f1"]))
+    engine = _get_engine()
+    promoted = auto_promote_if_better(
+        engine,
+        new_version=str(best_candidate["version"]),
+        new_f1=float(best_candidate["f1"]),
+    )
+
+    result = {
+        "status": "promoted" if promoted else "kept_current",
+        "candidate_version": best_candidate["version"],
+        "candidate_model_name": best_candidate["model_name"],
+        "candidate_f1": best_candidate["f1"],
+    }
+    logger.info("Serving decision: %s", result)
+    return result
 
 
 # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -115,8 +205,8 @@ with DAG(
     dag_id="finsense_daily_pipeline",
     default_args=DEFAULT_ARGS,
     description="Daily pipeline: ingest stock data, validate, compute features, train/serve model",
-    schedule="0 18 * * 1-5",  # 6 PM EST on weekdays (after market close)
-    start_date=datetime(2024, 1, 1),
+    schedule="0 18 * * 1-5",  # 6 PM America/New_York on weekdays
+    start_date=datetime(2024, 1, 1, tzinfo=pendulum.timezone("America/New_York")),
     catchup=False,
     tags=["finsense", "daily", "pipeline"],
     max_active_runs=1,

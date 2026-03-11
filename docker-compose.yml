@@ -8,11 +8,14 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
     FINSENSE_DB_URL: postgresql+psycopg2://${POSTGRES_USER:-finsense}:${POSTGRES_PASSWORD:-finsense_secret}@postgres:5432/${POSTGRES_DB:-finsense}
+    FINSENSE_MODEL_DIR: /opt/airflow/models
+    FINSENSE_TRAIN_TICKERS: ${FINSENSE_TRAIN_TICKERS:-AAPL,MSFT,GOOGL}
     REDIS_URL: redis://redis:6379/0
     KAFKA_BOOTSTRAP_SERVERS: kafka:29092
   volumes:
     - ./backend/src/dags:/opt/airflow/dags
     - ./backend/src:/opt/airflow/src
+    - ./backend/models:/opt/airflow/models
   depends_on:
     postgres:
       condition: service_healthy
@@ -176,6 +179,51 @@ services:
       timeout: 10s
       retries: 5
     restart: unless-stopped
+
+  # Monitoring stack (optional)
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: finsense-alertmanager
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./docs/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    networks:
+      - finsense-net
+    profiles: ["monitoring"]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: finsense-redis-exporter
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - finsense-net
+    profiles: ["monitoring"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: finsense-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./docs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docs/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+      - redis-exporter
+    networks:
+      - finsense-net
+    profiles: ["monitoring"]
 
 volumes:
   postgres_data:

@@ -1,0 +1,32 @@
+groups:
+  - name: finsense-api-alerts
+    rules:
+      - alert: FinSensePredictRateLimitSpike
+        expr: rate(finsense_rate_limited_by_path_total{path="/api/v1/predict"}[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: finsense-api
+        annotations:
+          summary: High 429 rate on /api/v1/predict
+          description: Predict endpoint is being rate-limited frequently.
+
+      - alert: FinSensePortfolioRateLimitSpike
+        expr: rate(finsense_rate_limited_by_path_total{path="/api/v1/portfolio-risk"}[5m]) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+          service: finsense-api
+        annotations:
+          summary: High 429 rate on /api/v1/portfolio-risk
+          description: Portfolio endpoint requests are being throttled.
+
+      - alert: FinSenseApiHigh5xx
+        expr: rate(finsense_responses_5xx_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: finsense-api
+        annotations:
+          summary: Elevated 5xx responses from FinSense API
+          description: API is returning server errors above baseline.

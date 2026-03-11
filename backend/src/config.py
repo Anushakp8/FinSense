@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     api_cors_origins: list[str] = ["http://localhost:3000"]
+    api_require_key: bool = False
+    api_key: str = ""
+    api_rate_limit_enabled: bool = False
+    api_rate_limit_use_redis: bool = True
+    api_rate_limit_max_requests: int = 60
+    api_rate_limit_window_seconds: int = 60
     model_artifacts_path: str = "./models"
     environment: str = "development"
     log_level: str = "INFO"

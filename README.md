@@ -36,6 +36,36 @@ bun install
 bun run dev
 ```
 
+## Security and Observability
+
+For local development, API key auth and rate limiting are disabled by default.
+For staging/production, enable and configure them via `.env`:
+
+```bash
+# Protect sensitive endpoints:
+# - POST /api/v1/predict
+# - GET  /api/v1/portfolio-risk
+API_REQUIRE_KEY=true
+API_KEY=replace_with_a_strong_secret
+
+# Optional in-process rate limiting for sensitive endpoints
+API_RATE_LIMIT_ENABLED=true
+API_RATE_LIMIT_MAX_REQUESTS=60
+API_RATE_LIMIT_WINDOW_SECONDS=60
+```
+
+The API now exposes a lightweight metrics endpoint at `/metrics` in
+Prometheus text format, including:
+
+- `finsense_requests_total`
+- `finsense_rate_limited_total`
+- `finsense_responses_2xx_total`
+- `finsense_responses_4xx_total`
+- `finsense_responses_5xx_total`
+
+Operational setup and troubleshooting steps are documented in
+`docs/operations-runbook.md`.
+
 ## Project Status
 
 - [x] Phase 1: Project Scaffolding and Infrastructure

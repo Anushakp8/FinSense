@@ -3,10 +3,10 @@
 import logging
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 
-from src.api.dependencies import get_engine
+from src.api.dependencies import get_engine, require_api_key
 from src.api.schemas import IndividualRisk, PortfolioRiskResponse
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ def _get_returns(engine, ticker: str, days: int = 252) -> np.ndarray:
 def get_portfolio_risk(
     tickers: str = Query(..., description="Comma-separated ticker list", examples=["AAPL,MSFT,GOOGL"]),
     weights: str = Query(..., description="Comma-separated weights", examples=["0.4,0.3,0.3"]),
+    _: None = Depends(require_api_key),
 ) -> PortfolioRiskResponse:
     """Calculate portfolio risk metrics using historical simulation."""
     ticker_list = [t.strip().upper() for t in tickers.split(",")]

@@ -296,8 +296,6 @@ def run_training_pipeline(
     }
 
     all_results: dict[str, list[dict[str, float]]] = {name: [] for name in model_configs}
-    best_models: dict[str, object] = {}
-    scalers: dict[str, object] = {}
 
     # Step 5: Train and evaluate per fold
     for fold_idx, (train_df, test_df) in enumerate(splits):
@@ -325,8 +323,6 @@ def run_training_pipeline(
 
             metrics = evaluate_model(prepared.y_test, y_pred, y_prob)
             all_results[model_name].append(metrics)
-            best_models[model_name] = model
-            scalers[model_name] = prepared.scaler
 
             logger.debug(
                 "Fold %d | %s | F1=%.4f Acc=%.4f",
@@ -349,10 +345,21 @@ def run_training_pipeline(
 
     best_name = max(avg_metrics, key=lambda k: avg_metrics[k]["f1"])
     best_metric = avg_metrics[best_name]
-    best_model = best_models[best_name]
-    best_scaler = scalers[best_name]
 
     logger.info("Best model: %s (F1=%.4f)", best_name, best_metric["f1"])
+
+    # Refit the selected model on the full dataset so persisted artifacts
+    # reflect the model chosen by walk-forward evaluation.
+    final_prepared = prepare_split(
+        df,
+        df,
+        feature_cols=feature_cols,
+        target_col="target",
+        cap_outliers_enabled=True,
+        scale_enabled=True,
+    )
+    final_model = model_configs[best_name](final_prepared.X_train, final_prepared.y_train)
+    final_scaler = final_prepared.scaler
 
     # Save model and scaler together
     Path(model_dir).mkdir(parents=True, exist_ok=True)
@@ -361,7 +368,10 @@ def run_training_pipeline(
     model_path = os.path.join(model_dir, model_filename)
 
     with open(model_path, "wb") as f:
-        pickle.dump({"model": best_model, "scaler": best_scaler, "feature_columns": feature_cols}, f)
+        pickle.dump(
+            {"model": final_model, "scaler": final_scaler, "feature_columns": feature_cols},
+            f,
+        )
 
     logger.info("Saved best model + scaler to %s", model_path)
 

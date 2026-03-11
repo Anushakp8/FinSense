@@ -146,15 +146,17 @@ class TestModelRegistry:
 
         mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_result.rowcount = 1
-        mock_conn.execute.return_value = mock_result
+        exists_result = MagicMock()
+        exists_result.scalar.return_value = 1
+        deactivate_result = MagicMock()
+        activate_result = MagicMock()
+        mock_conn.execute.side_effect = [exists_result, deactivate_result, activate_result]
         mock_engine.begin.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_engine.begin.return_value.__exit__ = MagicMock(return_value=False)
 
         result = promote_model(mock_engine, "20240102_153000")
         assert result is True
-        assert mock_conn.execute.call_count == 2  # deactivate all + activate one
+        assert mock_conn.execute.call_count == 3  # exists check + deactivate + activate
 
     def test_promote_nonexistent_version(self) -> None:
         """Should return False for non-existent version."""
@@ -162,12 +164,12 @@ class TestModelRegistry:
 
         mock_engine = MagicMock()
         mock_conn = MagicMock()
-        mock_deactivate = MagicMock()
-        mock_activate = MagicMock()
-        mock_activate.rowcount = 0  # No rows updated
-        mock_conn.execute.side_effect = [mock_deactivate, mock_activate]
+        exists_result = MagicMock()
+        exists_result.scalar.return_value = None
+        mock_conn.execute.return_value = exists_result
         mock_engine.begin.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_engine.begin.return_value.__exit__ = MagicMock(return_value=False)
 
         result = promote_model(mock_engine, "nonexistent")
         assert result is False
+        mock_conn.execute.assert_called_once()
